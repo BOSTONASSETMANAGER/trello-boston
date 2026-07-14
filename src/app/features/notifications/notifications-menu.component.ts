@@ -119,7 +119,7 @@ export class NotificationsMenuComponent implements OnDestroy {
       case 'card.commented':
         return `${actor} comentó en «${title}»`;
       case 'card.mentioned':
-        return `${actor} te mencionó`;
+        return title ? `${actor} te mencionó en «${title}»` : `${actor} te mencionó`;
       default:
         return n.type;
     }

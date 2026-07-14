@@ -7,3 +7,4 @@ export { SpinnerComponent } from './spinner.component';
 export { ModalComponent } from './modal.component';
 export { PopoverComponent } from './popover.component';
 export { ClickOutsideDirective } from './click-outside.directive';
+export { MentionsDirective } from './mentions.directive';

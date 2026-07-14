@@ -14,6 +14,7 @@ import {
   BadgeComponent,
   ButtonComponent,
   IconComponent,
+  MentionsDirective,
   ModalComponent,
   PopoverComponent,
   SpinnerComponent,
@@ -31,6 +32,7 @@ import {
   Member,
 } from '../../core/models/models';
 import { formatDue, isDueSoon, isOverdue, relativeTime, toDateTimeLocal, fromDateTimeLocal } from '../../core/util/date';
+import { extractMentions, htmlToText, newMentions } from '../../core/util/mentions';
 
 import { BoardStore } from '../../core/board.store';
 import { CardsService } from '../../core/services/cards.service';
@@ -69,6 +71,7 @@ import { ChecklistPanelComponent } from './panels/checklist-panel.component';
     BadgeComponent,
     SpinnerComponent,
     ChecklistPanelComponent,
+    MentionsDirective,
   ],
   template: `
     <app-modal [open]="true" width="max-w-5xl" (closed)="close()">
@@ -184,8 +187,9 @@ import { ChecklistPanelComponent } from './panels/checklist-panel.component';
                   <textarea
                     class="w-full resize-y rounded-md border border-slate-300 bg-card px-3 py-2 text-sm focus:border-[#2563eb] focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
                     rows="4"
-                    placeholder="Añade una descripción más detallada…"
+                    placeholder="Añade una descripción más detallada… (@ para mencionar)"
                     [(ngModel)]="descDraft"
+                    [appMentions]="allMembers()"
                   ></textarea>
                   <div class="mt-2 flex items-center gap-2">
                     <app-button size="sm" variant="primary" (click)="saveDesc()">Guardar</app-button>
@@ -219,6 +223,7 @@ import { ChecklistPanelComponent } from './panels/checklist-panel.component';
                     class="prose-sm min-h-[120px] w-full overflow-x-auto break-words rounded-md border border-slate-300 bg-card px-3 py-2.5 text-sm leading-relaxed text-card-foreground focus:border-[#2563eb] focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
                     [contentEditable]="true"
                     [innerHTML]="bodyHtmlSafe()"
+                    [appMentions]="allMembers()"
                     (input)="onRichInput(richEditor)"
                     (paste)="onRichPaste($event, richEditor)"
                     (blur)="saveBodyHtml(c, richEditor)"
@@ -399,8 +404,9 @@ import { ChecklistPanelComponent } from './panels/checklist-panel.component';
                     <textarea
                       class="w-full resize-none rounded-md border border-slate-300 bg-card px-3 py-2 text-sm focus:border-[#2563eb] focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
                       rows="2"
-                      placeholder="Escribe un comentario…"
+                      placeholder="Escribe un comentario… (@ para mencionar)"
                       [(ngModel)]="commentDraft"
+                      [appMentions]="allMembers()"
                       (keydown.enter)="$any($event).ctrlKey && addComment(c)"
                     ></textarea>
                     <div class="mt-1.5">
@@ -897,10 +903,13 @@ export class CardDetailComponent {
     if (!c) return;
     const description = this.descDraft;
     this.editingDesc.set(false);
+    // Solo se notifica a quien aparece mencionado por primera vez.
+    const mentioned = newMentions(c.description, description, this.allMembers());
     try {
       await this.cardsSvc.update(c.id, { description });
       this.card.update((x) => (x ? { ...x, description } : x));
       this.store.patchCard(c.id, { description });
+      await this.notifyMentions(c, mentioned);
     } catch (e: any) {
       this.toast.error('No se pudo guardar la descripción');
     }
@@ -927,6 +936,7 @@ export class CardDetailComponent {
     try {
       await this.commentsSvc.add(c.id, memberId, body);
       this.commentDraft = '';
+      await this.notifyMentions(c, extractMentions(body, this.allMembers()));
       if (c.board_id) {
         try {
           await this.activitySvc.log(c.board_id, 'comment.added', { cardId: c.id, memberId });
@@ -968,6 +978,25 @@ export class CardDetailComponent {
       await this.reload();
     } catch (e: any) {
       this.toast.error('No se pudo actualizar los miembros');
+    }
+  }
+
+  /** Notificaciones 'card.mentioned' para cada miembro mencionado (best-effort;
+   *  el servicio ya descarta la auto-mención). */
+  private async notifyMentions(c: Card, mentioned: Member[]) {
+    for (const m of mentioned) {
+      try {
+        await this.notificationsSvc.create({
+          memberId: m.id,
+          actorId: this.currentId(),
+          type: 'card.mentioned',
+          boardId: c.board_id,
+          cardId: c.id,
+          data: { title: c.title },
+        });
+      } catch {
+        /* notifications are best-effort */
+      }
     }
   }
 
@@ -1129,12 +1158,15 @@ export class CardDetailComponent {
     const body_html = el.innerHTML;
     this.bodyEmpty.set(!this.htmlHasContent(body_html));
     if (body_html === (c.body_html ?? '')) return;
+    // Menciones sobre el texto plano; solo las nuevas respecto al HTML previo.
+    const mentioned = newMentions(htmlToText(c.body_html), htmlToText(body_html), this.allMembers());
     try {
       await this.cardsSvc.update(c.id, { body_html });
       this.card.update((x) => (x ? { ...x, body_html } : x));
       this.store.patchCard(c.id, { body_html });
       // Keep the seed in sync so a later reseed shows the saved value.
       this.bodyHtmlSeed.set(body_html);
+      await this.notifyMentions(c, mentioned);
     } catch (e: any) {
       this.toast.error('No se pudo guardar el contenido');
     }
