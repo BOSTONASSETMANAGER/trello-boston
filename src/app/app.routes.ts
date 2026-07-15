@@ -21,6 +21,12 @@ export const routes: Routes = [
       import('./features/my-cards/my-cards.component').then((m) => m.MyCardsComponent),
   },
   {
+    path: 'usuarios',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/admin/users-admin.component').then((m) => m.UsersAdminComponent),
+  },
+  {
     path: 'board/:id',
     canActivate: [authGuard],
     loadComponent: () =>

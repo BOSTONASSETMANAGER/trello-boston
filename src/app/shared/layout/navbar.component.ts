@@ -60,6 +60,16 @@ import { PopoverComponent } from '../ui/popover.component';
               <p class="truncate text-xs text-muted-foreground">{{ user.current()?.email }}</p>
             </div>
           </div>
+          @if (user.isAdmin()) {
+            <div class="my-1 h-px bg-border"></div>
+            <a
+              routerLink="/usuarios"
+              (click)="userPop.close()"
+              class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-foreground hover:bg-accent"
+            >
+              <app-icon name="users" [size]="16" /> Usuarios
+            </a>
+          }
           <div class="my-1 h-px bg-border"></div>
           <button
             (click)="logout(); userPop.close()"
